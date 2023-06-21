@@ -22,8 +22,6 @@
 #include "cia-611-2.h"
 #include "printframe.h"
 
-#define DEFAULT_TRANSFER_ID 0x242
-
 extern int optind, opterr, optopt;
 
 void print_usage(char *prg)

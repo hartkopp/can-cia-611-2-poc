@@ -9,6 +9,15 @@
 
 #include <linux/types.h>
 
+#define DEFAULT_TRANSFER_ID 0x242 /* prio - undefined ? */
+#define DEFAULT_VCID 0x0 /* undefined ? */
+#define MPDU_SDT 0x08 /* to be confirmed in CiA 611-1 */
+#define DEFAULT_AF 0x0 /* undefined ? */
+
+/*
+ * Multi-PDU contains C-PDU elements with a c_pdu_header structure.
+ * Content in __u16 and __u32 is represented in network byte order.
+ */
 struct c_pdu_header {
 	__u8 c_type; /* C-PDU protocol type, inspired by CiA 611-1 SDTs */
 	__u8 c_info; /* C-PDU additional information (protocol type specific) */
