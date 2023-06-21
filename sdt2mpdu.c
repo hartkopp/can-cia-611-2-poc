@@ -15,14 +15,13 @@
 #include <sys/socket.h>
 #include <sys/ioctl.h>
 #include <net/if.h>
+#include <arpa/inet.h> /* for network byte order conversion */
 
 #include <linux/sockios.h>
 #include <linux/can.h>
 #include <linux/can/raw.h>
 #include "cia-611-2.h"
 #include "printframe.h"
-
-#define NO_FCNT_VALUE 0xFFFF0000U
 
 extern int optind, opterr, optopt;
 
@@ -46,8 +45,9 @@ int main(int argc, char **argv)
 	struct sockaddr_can addr;
 	struct can_filter rfilter;
 	struct canxl_frame cfsrc, cfdst;
-	struct c_pdu_header *cpduh = (struct c_pdu_header *) cfsrc.data;
+	struct c_pdu_header *c_pdu_hdr;
 	unsigned int dataptr = 0;
+	unsigned int padsz;
 
 	int nbytes, ret;
 	int sockopt = 1;
@@ -154,6 +154,9 @@ int main(int argc, char **argv)
 	/* main loop */
 	while (1) {
 
+		/* clear data for copying zero padded content */
+		memset(cfsrc.data, 0, sizeof(cfsrc.data));
+
 		/* read CAN XL frame */
 		nbytes = read(src, &cfsrc, sizeof(struct canxl_frame));
 		if (nbytes < 0) {
@@ -190,7 +193,54 @@ int main(int argc, char **argv)
 			printxlframe(&cfsrc);
 		}
 
-		/* TODO */
+		padsz = cfsrc.len; /* real data length - not the DLC */
+
+		/* need to round up to next 4 byte boundary? */
+		if (padsz % 4)
+			padsz += (4 - padsz % 4);
+
+		/* does the new PDU generally fit into the C-PDU space? */
+		if (C_PDU_HEADER_SIZE + padsz > CANXL_MAX_DLEN) {
+			printf("dropped received PDU as it does not fit into MPDU frames!");
+			continue;
+		}
+
+		/* does the new PDU still fit into currently available M-PDU space? */
+		if (C_PDU_HEADER_SIZE + padsz > CANXL_MAX_DLEN - dataptr) {
+
+			/* no => send out the current M-PDU to make space */
+			cfdst.prio = transfer_id;
+			cfdst.flags = CANXL_XLF; /* no SEC bit */
+			cfdst.sdt = MPDU_SDT;
+			cfdst.len = dataptr;
+			cfdst.af = DEFAULT_AF;
+
+			/* write M-PDU frame to destination socket */
+			nbytes = write(dst, &cfdst, CANXL_HDR_SIZE + cfdst.len);
+			if (nbytes != CANXL_HDR_SIZE + cfdst.len) {
+				printf("nbytes = %d\n", nbytes);
+				perror("write dst canxl_frame");
+				exit(1);
+			}
+
+			/* clear M-PDU frame */
+			dataptr = 0;
+		}
+
+		/* fill C-PDU header */
+		c_pdu_hdr = (struct c_pdu_header *) &cfdst.data[dataptr];
+
+		c_pdu_hdr->c_type = cfsrc.sdt;
+		c_pdu_hdr->c_info = DEFAULT_VCID;
+		c_pdu_hdr->c_dlen = htons(cfsrc.len);
+		c_pdu_hdr->c_id = htonl(cfsrc.af);
+
+		dataptr += C_PDU_HEADER_SIZE;
+
+		/* copy data - cfsrc.data is zero padded */
+		memcpy(&cfdst.data[dataptr], cfsrc.data, padsz);
+
+		dataptr += padsz;
 
 	} /* while(1) */
 
