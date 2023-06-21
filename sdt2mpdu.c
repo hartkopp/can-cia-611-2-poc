@@ -215,6 +215,9 @@ int main(int argc, char **argv)
 			cfdst.len = dataptr;
 			cfdst.af = DEFAULT_AF;
 
+			if (verbose)
+				printf("sending M-PDU with length %u\n", dataptr);
+
 			/* write M-PDU frame to destination socket */
 			nbytes = write(dst, &cfdst, CANXL_HDR_SIZE + cfdst.len);
 			if (nbytes != CANXL_HDR_SIZE + cfdst.len) {
@@ -241,6 +244,12 @@ int main(int argc, char **argv)
 		memcpy(&cfdst.data[dataptr], cfsrc.data, padsz);
 
 		dataptr += padsz;
+
+		if (verbose) {
+			printf("added C-PDU ct %02X ci %02X dl %u id %08X psz %u dptr %u\n",
+			       c_pdu_hdr->c_type, c_pdu_hdr->c_info, c_pdu_hdr->c_dlen,
+			       c_pdu_hdr->c_id, padsz, dataptr);
+		}
 
 	} /* while(1) */
 
