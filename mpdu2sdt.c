@@ -15,6 +15,7 @@
 #include <sys/socket.h>
 #include <sys/ioctl.h>
 #include <net/if.h>
+#include <arpa/inet.h> /* for network byte order conversion */
 
 #include <linux/sockios.h>
 #include <linux/can.h>
@@ -44,8 +45,9 @@ int main(int argc, char **argv)
 	struct sockaddr_can addr;
 	struct can_filter rfilter;
 	struct canxl_frame cfsrc, cfdst;
-	struct c_pdu_header *cpduh = (struct c_pdu_header *) cfdst.data;
+	struct c_pdu_header *c_pdu_hdr;
 	unsigned int dataptr = 0;
+	unsigned int padsz;
 
 	int nbytes, ret;
 	int sockopt = 1;
@@ -188,7 +190,83 @@ int main(int argc, char **argv)
 			printxlframe(&cfsrc);
 		}
 
-		/* TODO */
+		if (cfsrc.sdt != MPDU_SDT) {
+			printf("dropped received PDU as it is no M-PDU frame!");
+                        continue;
+		}
+
+		/* size must be a padded length value */
+		if (cfsrc.len % 4) {
+			fprintf(stderr, "M-PDU not padded correctly (%d)\n",
+				cfsrc.len);
+			return 1;
+		}
+
+		/* size must be at least one C-PDU header and a padded byte */
+		if (cfsrc.len < C_PDU_HEADER_SIZE + 4) {
+			fprintf(stderr, "M-PDU content too short (%d)\n",
+				cfsrc.len);
+			return 1;
+		}
+
+		/* start to decompose */
+		dataptr = 0;
+
+		while (1) {
+
+			/* check for minimum length of C-PDU */
+			if (dataptr > cfsrc.len - (C_PDU_HEADER_SIZE + 4))
+				break;
+
+			c_pdu_hdr = (struct c_pdu_header *) &cfsrc.data[dataptr];
+
+			padsz = ntohs(c_pdu_hdr->c_dlen); /* get real data length */
+
+			/* we have at least one data byte in a CAN XL frame */
+			if (padsz < 1)
+				break;
+
+			/* need to round up to next 4 byte boundary? */
+			if (padsz % 4)
+				padsz += (4 - padsz % 4);
+
+			/* does the C-PDU incl. data fit into the M-PDU space? */
+			if (C_PDU_HEADER_SIZE + padsz > cfsrc.len - dataptr) {
+				fprintf(stderr, "C-PDU content too long (%lu > %d)\n",
+					C_PDU_HEADER_SIZE + padsz, cfsrc.len - dataptr);
+				return 1;
+			}
+
+			/* create a valid STD frame from this C-PDU element */
+			cfdst.prio = transfer_id;
+			cfdst.flags = CANXL_XLF; /* no SEC bit */
+			cfdst.sdt = c_pdu_hdr->c_type;
+			cfdst.len = ntohs(c_pdu_hdr->c_dlen);
+			cfdst.af = ntohl(c_pdu_hdr->c_id);
+
+			dataptr += C_PDU_HEADER_SIZE;
+
+			/* copy data - cfsrc.data is zero padded */
+			memcpy(cfdst.data, &cfsrc.data[dataptr], padsz);
+
+			dataptr += padsz;
+
+			if (verbose) {
+				printf("sending C-PDU ct %02X ci %02X dl %u id %08X psz %u dptr %u\n",
+				       c_pdu_hdr->c_type, c_pdu_hdr->c_info,
+				       ntohs(c_pdu_hdr->c_dlen),
+				       ntohl(c_pdu_hdr->c_id), padsz, dataptr);
+			}
+
+			/* write C-PDU frame to destination socket */
+			nbytes = write(dst, &cfdst, CANXL_HDR_SIZE + cfdst.len);
+			if (nbytes != CANXL_HDR_SIZE + cfdst.len) {
+				printf("nbytes = %d\n", nbytes);
+				perror("write dst canxl_frame");
+				exit(1);
+			}
+
+		} /* while (1) */
 
 	} /* while (1) */
 
