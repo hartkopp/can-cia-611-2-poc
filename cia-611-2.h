@@ -9,7 +9,7 @@
 
 #include <linux/types.h>
 
-#define DEFAULT_TRANSFER_ID 0x242 /* prio - undefined ? */
+#define DEFAULT_TRANSFER_ID 0x333 /* prio - undefined ? */
 #define DEFAULT_VCID 0x0 /* undefined ? */
 #define MPDU_SDT 0x08 /* to be confirmed in CiA 611-1 */
 #define DEFAULT_AF 0x0 /* undefined ? */
