@@ -14,6 +14,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/ioctl.h>
+#include <sys/timerfd.h>
 #include <net/if.h>
 #include <arpa/inet.h> /* for network byte order conversion */
 
@@ -35,13 +36,40 @@ void print_usage(char *prg)
 	fprintf(stderr, "         -v               (verbose)\n");
 }
 
+void write_mpdu(int s, struct canxl_frame *cfx, unsigned int *dataptr)
+{
+	int nbytes;
+
+	cfx->len = *dataptr;
+
+	/* paranoia check */
+	if (!cfx->len) {
+		printf("%s: failure: dataptr is zero!\n", __FUNCTION__);
+		exit(1);
+	}
+
+	/* write M-PDU frame to destination socket */
+	nbytes = write(s, cfx, CANXL_HDR_SIZE + cfx->len);
+	if (nbytes != CANXL_HDR_SIZE + cfx->len) {
+		printf("nbytes = %d\n", nbytes);
+		perror("write dst canxl_frame");
+		exit(1);
+	}
+
+	/* clear M-PDU frame */
+	*dataptr = 0;
+}
+
 int main(int argc, char **argv)
 {
 	int opt;
 	canid_t transfer_id = DEFAULT_TRANSFER_ID;
 	int verbose = 0;
 
-	int src, dst;
+	int src, dst; /* sockets */
+	int tfd; /* timer fd */
+	fd_set rdfs;
+
 	struct sockaddr_can addr;
 	struct can_filter rfilter;
 	struct canxl_frame cfsrc, cfdst;
@@ -52,6 +80,11 @@ int main(int argc, char **argv)
 	int nbytes, ret;
 	int sockopt = 1;
 	struct timeval tv;
+
+	struct itimerspec spec = {
+		{ 0, 0 }, /* no interval timer */
+		{ 0, 0 }  /* no single timeout */
+	};
 
 	while ((opt = getopt(argc, argv, "t:vh?")) != -1) {
 		switch (opt) {
@@ -151,11 +184,48 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
+	tfd = timerfd_create(CLOCK_MONOTONIC,  0);
+	if (tfd < 0) {
+		perror("timerfd create");
+		return 1;
+	}
+
+	/* set defaults for M-PDU CAN XL frame */
+	cfdst.prio = transfer_id;
+	cfdst.flags = CANXL_XLF; /* no SEC bit */
+	cfdst.sdt = MPDU_SDT;
+	cfdst.af = DEFAULT_AF;
+
 	/* main loop */
 	while (1) {
 
 		/* clear data for copying zero padded content */
 		memset(cfsrc.data, 0, sizeof(cfsrc.data));
+
+		FD_ZERO(&rdfs);
+		FD_SET(src, &rdfs);
+		FD_SET(tfd, &rdfs);
+
+		ret = select(((src > tfd)?src:tfd) + 1, &rdfs, NULL, NULL, NULL);
+		if (ret < 0) {
+			perror("select");
+			return 1;
+		}
+
+		if (FD_ISSET(tfd, &rdfs)) {
+			/* stop timer */
+			spec.it_value.tv_sec = 0;
+			spec.it_value.tv_nsec = 0;
+			timerfd_settime(tfd, 0, &spec, NULL);
+
+			if (verbose)
+				printf("(timeout) sending M-PDU with length %u\n", dataptr);
+
+			write_mpdu(dst, &cfdst, &dataptr);
+		}
+
+		if (!FD_ISSET(src, &rdfs))
+			continue;
 
 		/* read CAN XL frame */
 		nbytes = read(src, &cfsrc, sizeof(struct canxl_frame));
@@ -209,25 +279,23 @@ int main(int argc, char **argv)
 		if (C_PDU_HEADER_SIZE + padsz > CANXL_MAX_DLEN - dataptr) {
 
 			/* no => send out the current M-PDU to make space */
-			cfdst.prio = transfer_id;
-			cfdst.flags = CANXL_XLF; /* no SEC bit */
-			cfdst.sdt = MPDU_SDT;
-			cfdst.len = dataptr;
-			cfdst.af = DEFAULT_AF;
 
 			if (verbose)
-				printf("sending M-PDU with length %u\n", dataptr);
+				printf("(buffer) sending M-PDU with length %u\n", dataptr);
 
-			/* write M-PDU frame to destination socket */
-			nbytes = write(dst, &cfdst, CANXL_HDR_SIZE + cfdst.len);
-			if (nbytes != CANXL_HDR_SIZE + cfdst.len) {
-				printf("nbytes = %d\n", nbytes);
-				perror("write dst canxl_frame");
-				exit(1);
-			}
+			/* stop timer */
+			spec.it_value.tv_sec = 0;
+			spec.it_value.tv_nsec = 0;
+			timerfd_settime(tfd, 0, &spec, NULL);
 
-			/* clear M-PDU frame */
-			dataptr = 0;
+			write_mpdu(dst, &cfdst, &dataptr);
+		}
+
+		if (dataptr == 0) {
+			/* start timer when adding the first C-PDU element */
+			spec.it_value.tv_sec = 1;
+			spec.it_value.tv_nsec = 0;
+			timerfd_settime(tfd, 0, &spec, NULL);
 		}
 
 		/* fill C-PDU header */
