@@ -36,6 +36,8 @@ void print_usage(char *prg)
 	fprintf(stderr, "         -l <size>        (limit PDU size"
 		" to %ld .. %d, default: %d)\n", MPDU_MIN_SIZE, MPDU_MAX_SIZE,
 		MPDU_DEFAULT_SIZE);
+	fprintf(stderr, "         -T <timeout_ms>  (M-PDU transmission timeout "
+		"- default: %d msecs)\n", MPDU_DEFAULT_TIMEOUT_MS);
 	fprintf(stderr, "         -v               (verbose)\n");
 }
 
@@ -68,6 +70,7 @@ int main(int argc, char **argv)
 	int opt;
 	canid_t transfer_id = DEFAULT_TRANSFER_ID;
 	unsigned int mpdu_max_size = MPDU_DEFAULT_SIZE;
+	unsigned long timeout_ms = MPDU_DEFAULT_TIMEOUT_MS;
 	int verbose = 0;
 
 	int src, dst; /* sockets */
@@ -90,7 +93,7 @@ int main(int argc, char **argv)
 		{ 0, 0 }  /* no single timeout */
 	};
 
-	while ((opt = getopt(argc, argv, "t:l:vh?")) != -1) {
+	while ((opt = getopt(argc, argv, "t:l:T:vh?")) != -1) {
 		switch (opt) {
 
 		case 't':
@@ -109,6 +112,10 @@ int main(int argc, char **argv)
 				print_usage(basename(argv[0]));
 				return 1;
 			}
+			break;
+
+		case 'T':
+			timeout_ms = strtoul(optarg, NULL, 10);
 			break;
 
 		case 'v':
@@ -307,8 +314,8 @@ int main(int argc, char **argv)
 
 		if (dataptr == 0) {
 			/* start timer when adding the first C-PDU element */
-			spec.it_value.tv_sec = 1;
-			spec.it_value.tv_nsec = 0;
+			spec.it_value.tv_sec = timeout_ms / 1000;
+			spec.it_value.tv_nsec = (timeout_ms % 1000) * 1000 * 1000;
 			timerfd_settime(tfd, 0, &spec, NULL);
 		}
 

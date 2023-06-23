@@ -32,4 +32,6 @@ struct c_pdu_header {
 #define MPDU_MAX_SIZE CANXL_MAX_DLEN
 #define MPDU_DEFAULT_SIZE MPDU_MAX_SIZE
 
+#define MPDU_DEFAULT_TIMEOUT_MS 1000
+
 #endif /* CIA_611_2_H */
