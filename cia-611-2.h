@@ -26,5 +26,10 @@ struct c_pdu_header {
 };
 
 #define C_PDU_HEADER_SIZE (sizeof(struct c_pdu_header))
+#define C_PDU_MIN_DATA_SIZE 4 /* at least 1 byte aligned to 4 byte */
+
+#define MPDU_MIN_SIZE (C_PDU_HEADER_SIZE + C_PDU_MIN_DATA_SIZE)
+#define MPDU_MAX_SIZE CANXL_MAX_DLEN
+#define MPDU_DEFAULT_SIZE MPDU_MAX_SIZE
 
 #endif /* CIA_611_2_H */

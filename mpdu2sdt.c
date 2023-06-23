@@ -32,6 +32,9 @@ void print_usage(char *prg)
 	fprintf(stderr, "Options:\n");
 	fprintf(stderr, "         -t <transfer_id> (TRANSFER ID "
 		"- default: 0x%03X)\n", DEFAULT_TRANSFER_ID);
+	fprintf(stderr, "         -l <size>        (limit PDU size"
+		" to %ld .. %d, default: %d)\n", MPDU_MIN_SIZE, MPDU_MAX_SIZE,
+		MPDU_DEFAULT_SIZE);
 	fprintf(stderr, "         -v               (verbose)\n");
 }
 
@@ -203,7 +206,7 @@ int main(int argc, char **argv)
 		}
 
 		/* size must be at least one C-PDU header and a padded byte */
-		if (cfsrc.len < C_PDU_HEADER_SIZE + 4) {
+		if (cfsrc.len < MPDU_MIN_SIZE) {
 			fprintf(stderr, "M-PDU content too short (%d)\n",
 				cfsrc.len);
 			return 1;
@@ -215,7 +218,7 @@ int main(int argc, char **argv)
 		while (1) {
 
 			/* check for minimum length of C-PDU */
-			if (dataptr > cfsrc.len - (C_PDU_HEADER_SIZE + 4))
+			if (dataptr > cfsrc.len - MPDU_MIN_SIZE)
 				break;
 
 			c_pdu_hdr = (struct c_pdu_header *) &cfsrc.data[dataptr];

@@ -33,6 +33,9 @@ void print_usage(char *prg)
 	fprintf(stderr, "Options:\n");
 	fprintf(stderr, "         -t <transfer_id> (TRANSFER ID "
 		"- default: 0x%03X)\n", DEFAULT_TRANSFER_ID);
+	fprintf(stderr, "         -l <size>        (limit PDU size"
+		" to %ld .. %d, default: %d)\n", MPDU_MIN_SIZE, MPDU_MAX_SIZE,
+		MPDU_DEFAULT_SIZE);
 	fprintf(stderr, "         -v               (verbose)\n");
 }
 
@@ -270,13 +273,13 @@ int main(int argc, char **argv)
 			padsz += (4 - padsz % 4);
 
 		/* does the new PDU generally fit into the C-PDU space? */
-		if (C_PDU_HEADER_SIZE + padsz > CANXL_MAX_DLEN) {
+		if (C_PDU_HEADER_SIZE + padsz > MPDU_MAX_SIZE) {
 			printf("dropped received PDU as it does not fit into MPDU frames!");
 			continue;
 		}
 
 		/* does the new PDU still fit into currently available M-PDU space? */
-		if (C_PDU_HEADER_SIZE + padsz > CANXL_MAX_DLEN - dataptr) {
+		if (C_PDU_HEADER_SIZE + padsz > MPDU_MAX_SIZE - dataptr) {
 
 			/* no => send out the current M-PDU to make space */
 
