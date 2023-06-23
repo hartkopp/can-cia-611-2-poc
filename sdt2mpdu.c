@@ -67,6 +67,7 @@ int main(int argc, char **argv)
 {
 	int opt;
 	canid_t transfer_id = DEFAULT_TRANSFER_ID;
+	unsigned int mpdu_max_size = MPDU_DEFAULT_SIZE;
 	int verbose = 0;
 
 	int src, dst; /* sockets */
@@ -89,12 +90,22 @@ int main(int argc, char **argv)
 		{ 0, 0 }  /* no single timeout */
 	};
 
-	while ((opt = getopt(argc, argv, "t:vh?")) != -1) {
+	while ((opt = getopt(argc, argv, "t:l:vh?")) != -1) {
 		switch (opt) {
 
 		case 't':
 			transfer_id = strtoul(optarg, NULL, 16);
 			if (transfer_id & ~CANXL_PRIO_MASK) {
+				print_usage(basename(argv[0]));
+				return 1;
+			}
+			break;
+
+		case 'l':
+			mpdu_max_size = strtoul(optarg, NULL, 10);
+			if (mpdu_max_size < MPDU_MIN_SIZE ||
+			    mpdu_max_size > MPDU_MAX_SIZE ||
+			    mpdu_max_size % 4) {
 				print_usage(basename(argv[0]));
 				return 1;
 			}
@@ -273,13 +284,13 @@ int main(int argc, char **argv)
 			padsz += (4 - padsz % 4);
 
 		/* does the new PDU generally fit into the C-PDU space? */
-		if (C_PDU_HEADER_SIZE + padsz > MPDU_MAX_SIZE) {
-			printf("dropped received PDU as it does not fit into MPDU frames!");
+		if (C_PDU_HEADER_SIZE + padsz > mpdu_max_size) {
+			printf("dropped received PDU as it does not fit into M-PDU frame limit!");
 			continue;
 		}
 
 		/* does the new PDU still fit into currently available M-PDU space? */
-		if (C_PDU_HEADER_SIZE + padsz > MPDU_MAX_SIZE - dataptr) {
+		if (C_PDU_HEADER_SIZE + padsz > mpdu_max_size - dataptr) {
 
 			/* no => send out the current M-PDU to make space */
 

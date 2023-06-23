@@ -42,6 +42,7 @@ int main(int argc, char **argv)
 {
 	int opt;
 	canid_t transfer_id = DEFAULT_TRANSFER_ID;
+	unsigned int mpdu_max_size = MPDU_DEFAULT_SIZE;
 	int verbose = 0;
 
 	int src, dst;
@@ -56,12 +57,22 @@ int main(int argc, char **argv)
 	int sockopt = 1;
 	struct timeval tv;
 
-	while ((opt = getopt(argc, argv, "t:vh?")) != -1) {
+	while ((opt = getopt(argc, argv, "t:l:vh?")) != -1) {
 		switch (opt) {
 
 		case 't':
 			transfer_id = strtoul(optarg, NULL, 16);
 			if (transfer_id & ~CANXL_PRIO_MASK) {
+				print_usage(basename(argv[0]));
+				return 1;
+			}
+			break;
+
+		case 'l':
+			mpdu_max_size = strtoul(optarg, NULL, 10);
+			if (mpdu_max_size < MPDU_MIN_SIZE ||
+			    mpdu_max_size > MPDU_MAX_SIZE ||
+			    mpdu_max_size % 4) {
 				print_usage(basename(argv[0]));
 				return 1;
 			}
@@ -210,6 +221,12 @@ int main(int argc, char **argv)
 			fprintf(stderr, "M-PDU content too short (%d)\n",
 				cfsrc.len);
 			return 1;
+		}
+
+		/* check for M-PDU max size limit */
+		if (cfsrc.len > mpdu_max_size) {
+			printf("dropped received PDU as it exceeds the M-PDU size limit!");
+			continue;
 		}
 
 		/* start to decompose */
